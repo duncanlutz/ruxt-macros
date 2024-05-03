@@ -1,0 +1,19 @@
+[package]
+name = "ruxt_macros"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "The proc-macro crate for Ruxt, a file-based routing web framework."
+repository = "https://github.com/duncanlutz/Ruxt"
+homepage = "https://ruxt.rs"
+readme = "README.md"
+keywords = ["actix", "htmx", "framework", "web", "file-based-routing", "ruxt", "proc-macro"]
+categories = ["web-programming", "web-programming::http-server"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.81"
+quote = "1.0.36"
+syn = { version = "2.0.60", features = ["full", "visit-mut"] }
