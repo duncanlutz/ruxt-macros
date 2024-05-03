@@ -14,6 +14,7 @@ categories = ["web-programming", "web-programming::http-server"]
 proc-macro = true
 
 [dependencies]
+actix-web = "4.5.1"
 proc-macro2 = "1.0.81"
 quote = "1.0.36"
 syn = { version = "2.0.60", features = ["full", "visit-mut"] }
