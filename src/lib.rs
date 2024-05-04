@@ -110,20 +110,6 @@ impl VisitMut for ExprVisitor {
     }
 }
 
-// Possible options:
-//
-// Closure:
-//  HttpServer::new(move || App::new().app_data(test_data.to_string()))
-//
-// Function:
-// HttpServer::new(app)
-
-fn locate_app_new_expr(expr: &Expr) -> Option<&Expr> {
-    // match expr {}
-
-    None
-}
-
 /// Generates the method call for a given route location
 fn generate_route_method_call(receiver: Expr, route_path: Vec<String>) -> Expr {
     let segments = generate_route_segments(route_path.clone());

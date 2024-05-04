@@ -5,7 +5,7 @@ This is a collection of macros for the [Ruxt](https://ruxt.rs) web framework.
 Add the following to your `Cargo.toml`:
 ```toml
 [dependencies]
-ruxt-macros = "0.1.2"
+ruxt-macros = "0.1.3"
 ```
 
 ## Usage
