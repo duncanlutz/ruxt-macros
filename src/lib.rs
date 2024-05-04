@@ -50,9 +50,18 @@ pub(crate) fn process_main(item: TokenStream) -> TokenStream {
 struct ExprVisitor;
 
 impl VisitMut for ExprVisitor {
-    // This function allows us to visit each cell expression in the function and modify it
+    /// The actix web server is always created with this syntax:
+    /// ```rust
+    /// HttpServer::new(move || App::new()))
+    /// ```
+    ///
+    /// The goal of this function is to do the following:
+    /// * Loop over each expression in the current function, looking for one with a path
+    ///    segment that matches `HttpServer::new`
+    /// * Check if the first argument is a closure
+    /// * Generate the necessary route methods for each route in the `src/pages` folder
+    /// * Replace the closure with a new closure that contains the generated route methods
     fn visit_expr_call_mut(&mut self, call: &mut ExprCall) {
-        // Check if any of the path segments are `HttpServer`
         if let Expr::Path(ref path) = *call.func {
             if path
                 .path
@@ -99,6 +108,20 @@ impl VisitMut for ExprVisitor {
         // continue recursively searching
         syn::visit_mut::visit_expr_call_mut(self, call);
     }
+}
+
+// Possible options:
+//
+// Closure:
+//  HttpServer::new(move || App::new().app_data(test_data.to_string()))
+//
+// Function:
+// HttpServer::new(app)
+
+fn locate_app_new_expr(expr: &Expr) -> Option<&Expr> {
+    // match expr {}
+
+    None
 }
 
 /// Generates the method call for a given route location
@@ -189,45 +212,46 @@ fn generate_routes() -> Vec<Vec<String>> {
     }
 
     // Recursively loop through each folder in src/pages
-    visit_dirs(&pages_path, &mut routes, pages_path);
+    visit_dirs(&pages_path, &mut Vec::new(), &mut routes);
 
     routes
 }
 
-/// Recursively visits each folder in the `src/pages` directory and generates routes
-fn visit_dirs(dir: &FsPath, routes: &mut Vec<Vec<String>>, base_path: &FsPath) {
+fn visit_dirs(dir: &FsPath, current_dir: &mut Vec<String>, result: &mut Vec<Vec<String>>) {
     if dir.is_dir() {
-        let mut current_folder_routes = Vec::new();
         for entry in fs::read_dir(dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
 
             if path.is_dir() {
-                let route = path.strip_prefix(base_path).unwrap().to_str().unwrap();
-                if route != "src/pages" {
-                    current_folder_routes.push(route.to_string());
+                if path.eq(FsPath::new("src/pages")) {
+                    continue;
                 }
-                visit_dirs(&path, routes, base_path);
-            } else if let Some(ext) = path.extension() {
-                if ext == "rs" {
-                    let route = path.strip_prefix(base_path).unwrap().with_extension("");
-                    let route_str = route.to_str().unwrap();
-                    if route_str != "src/pages" {
-                        if route_str.ends_with("index") {
-                            current_folder_routes.push("index".to_string())
-                        } else {
+
+                current_dir.push(path.to_str().unwrap().to_string());
+
+                visit_dirs(&path, current_dir, result);
+            } else {
+                if let Some(ext) = path.extension() {
+                    if ext == "rs" {
+                        let route = path.strip_prefix("src/pages").unwrap().with_extension("");
+                        let route_str = route.to_str().unwrap();
+
+                        if route_str != "src/pages" {
                             let route_components = route_str.split('/').collect::<Vec<&str>>();
+
                             if !route_components.iter().any(|s| s == &"mod") {
-                                routes
+                                let route_components = route_components
+                                    .iter()
+                                    .map(|s| s.to_string())
+                                    .collect::<Vec<String>>();
+                                result
                                     .push(route_components.iter().map(|s| s.to_string()).collect());
                             }
                         }
                     }
                 }
             }
-        }
-        if !current_folder_routes.is_empty() {
-            routes.push(current_folder_routes);
         }
     }
 }
