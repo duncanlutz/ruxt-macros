@@ -1,5 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
+use regex::Regex;
 use std::fs;
 use std::path::Path as FsPath;
 use syn::{
@@ -80,22 +81,37 @@ impl VisitMut for ExprVisitor {
                                 let mut current_body = body.clone();
 
                                 for route in routes {
-                                    let method_call =
-                                        generate_route_method_call(current_body, route);
-                                    current_body = method_call.clone();
-                                    *closure = Expr::Closure(ExprClosure {
-                                        attrs: vec![],
-                                        asyncness: None,
-                                        movability: None,
-                                        capture: Some(Default::default()),
-                                        or1_token: Default::default(),
-                                        inputs: Default::default(),
-                                        or2_token: Default::default(),
-                                        output: syn::ReturnType::Default,
-                                        body: Box::new(method_call),
-                                        lifetimes: None,
-                                        constness: None,
-                                    });
+                                    let verbs =
+                                        locate_verbs(&format!("src/pages/{}.rs", route.join("/")));
+
+                                    if verbs.is_empty() {
+                                        panic!(
+                                            "No route methods found for route: src/pages/{}.rs",
+                                            route.join("/")
+                                        );
+                                    }
+
+                                    for verb in verbs {
+                                        let method_call = generate_route_method_call(
+                                            current_body,
+                                            route.clone(),
+                                            &verb,
+                                        );
+                                        current_body = method_call.clone();
+                                        *closure = Expr::Closure(ExprClosure {
+                                            attrs: vec![],
+                                            asyncness: None,
+                                            movability: None,
+                                            capture: Some(Default::default()),
+                                            or1_token: Default::default(),
+                                            inputs: Default::default(),
+                                            or2_token: Default::default(),
+                                            output: syn::ReturnType::Default,
+                                            body: Box::new(method_call),
+                                            lifetimes: None,
+                                            constness: None,
+                                        });
+                                    }
                                 }
                             }
                         }
@@ -110,9 +126,27 @@ impl VisitMut for ExprVisitor {
     }
 }
 
+const ROUTES: [&str; 5] = ["get", "post", "put", "patch", "delete"];
+
+fn locate_verbs(route: &str) -> Vec<String> {
+    let file = fs::read_to_string(route).expect(format!("Unable to read file: {}", route).as_str());
+    let mut verbs: Vec<String> = Vec::new();
+
+    for verb in ROUTES.iter() {
+        let re = Regex::new(&format!(r#"async fn {}"#, verb)).unwrap();
+        for cap in re.captures_iter(&file) {
+            if let Some(_) = cap.get(0) {
+                verbs.push(verb.to_string());
+            }
+        }
+    }
+
+    verbs
+}
+
 /// Generates the method call for a given route location
-fn generate_route_method_call(receiver: Expr, route_path: Vec<String>) -> Expr {
-    let segments = generate_route_segments(route_path.clone());
+fn generate_route_method_call(receiver: Expr, route_path: Vec<String>, verb: &str) -> Expr {
+    let segments = generate_route_segments(route_path.clone(), verb);
 
     let path = Path {
         leading_colon: None,
@@ -125,13 +159,20 @@ fn generate_route_method_call(receiver: Expr, route_path: Vec<String>) -> Expr {
         path,
     });
 
-    let path_method_fn_expr = Expr::MethodCall(generate_web_get_to_path(path_expr));
+    let path_method_fn_expr = Expr::MethodCall(generate_web_get_to_path(path_expr, verb));
 
     let mut route_vec = route_path
         .iter()
         .map(|r| {
+            // Index route is at "/", not "/index"
             if r == "index" {
                 "".to_string()
+
+            // __ is used to denote a dynamic route
+            } else if r.starts_with("__") {
+                format!("{{{}}}", r.replace("__", "").to_string())
+
+            // Otherwise just return the route
             } else {
                 r.to_string()
             }
@@ -168,7 +209,7 @@ fn generate_route_method_call(receiver: Expr, route_path: Vec<String>) -> Expr {
 }
 
 /// Generates the path segments for a given route location
-fn generate_route_segments(route_path: Vec<String>) -> Vec<PathSegment> {
+fn generate_route_segments(route_path: Vec<String>, verb: &str) -> Vec<PathSegment> {
     let route_path = vec!["pages".to_string()]
         .into_iter()
         .chain(route_path.into_iter())
@@ -181,7 +222,7 @@ fn generate_route_segments(route_path: Vec<String>) -> Vec<PathSegment> {
             arguments: Default::default(),
         })
         .chain(std::iter::once(PathSegment {
-            ident: syn::Ident::new("page", proc_macro2::Span::call_site()),
+            ident: syn::Ident::new(verb, proc_macro2::Span::call_site()),
             arguments: Default::default(),
         }))
         .collect()
@@ -243,7 +284,7 @@ fn visit_dirs(dir: &FsPath, current_dir: &mut Vec<String>, result: &mut Vec<Vec<
 }
 
 /// Generates the `web::get().to()` method call
-fn generate_web_get_to_path(route_function_path: Expr) -> ExprMethodCall {
+fn generate_web_get_to_path(route_function_path: Expr, verb: &str) -> ExprMethodCall {
     let method: syn::Ident = syn::Ident::new("to", proc_macro2::Span::call_site());
     let args = vec![route_function_path];
 
@@ -268,7 +309,7 @@ fn generate_web_get_to_path(route_function_path: Expr) -> ExprMethodCall {
                             arguments: Default::default(),
                         },
                         PathSegment {
-                            ident: syn::Ident::new("get", proc_macro2::Span::call_site()),
+                            ident: syn::Ident::new(verb, proc_macro2::Span::call_site()),
                             arguments: Default::default(),
                         },
                     ]
